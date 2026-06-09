@@ -20,6 +20,14 @@ type ClientPayload = {
 export async function POST(request: Request): Promise<NextResponse> {
   let body: HandleUploadBody;
 
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    return errorResponse(
+      "BLOB_ERROR",
+      "Vercel Blob is not configured. Set BLOB_READ_WRITE_TOKEN to enable file uploads.",
+      500,
+    );
+  }
+
   try {
     body = (await request.json()) as HandleUploadBody;
   } catch {
@@ -96,7 +104,13 @@ function parseClientPayload(rawPayload: string | null | undefined): ClientPayloa
     throw new Error("Upload metadata is missing.");
   }
 
-  const parsed = JSON.parse(rawPayload) as ClientPayload;
+  let parsed: ClientPayload;
+
+  try {
+    parsed = JSON.parse(rawPayload) as ClientPayload;
+  } catch {
+    throw new Error("Upload metadata must be valid JSON.");
+  }
 
   if (
     typeof parsed.name !== "string" ||

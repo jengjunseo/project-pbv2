@@ -108,7 +108,9 @@ export function SlotEditor({ id }: SlotEditorProps) {
         }),
       });
 
-      const data = (await response.json()) as PBSlotResponse | { ok: false; error: { message: string } };
+      const data = (await response.json()) as
+        | PBSlotResponse
+        | { ok: false; error: { message: string } };
       if (!response.ok || !data.ok) {
         throw new Error("error" in data ? data.error.message : "저장하지 못했습니다.");
       }
@@ -145,7 +147,7 @@ export function SlotEditor({ id }: SlotEditorProps) {
       setFile(null);
       setRemainingSeconds(0);
       setStatus("empty");
-      setMessage("비워졌습니다.");
+      setMessage("비웠습니다.");
     } catch (error) {
       setStatus("error");
       setMessage(error instanceof Error ? error.message : "비우지 못했습니다.");

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { resolveRedisConfig } from "@/lib/redis";
 import {
   MAX_FILE_SIZE_BYTES,
   sanitizeFileName,
@@ -105,5 +106,46 @@ describe("validateFileBasics", () => {
 describe("sanitizeFileName", () => {
   it("keeps paths from using raw names", () => {
     expect(sanitizeFileName("../secret file.pdf")).toBe("secret-file.pdf");
+  });
+});
+
+describe("resolveRedisConfig", () => {
+  it("prefers Upstash variable names", () => {
+    expect(
+      resolveRedisConfig({
+        UPSTASH_REDIS_REST_URL: "https://upstash.example",
+        UPSTASH_REDIS_REST_TOKEN: "upstash-token",
+        KV_REST_API_URL: "https://kv.example",
+        KV_REST_API_TOKEN: "kv-token",
+      }),
+    ).toEqual({
+      url: "https://upstash.example",
+      token: "upstash-token",
+    });
+  });
+
+  it("falls back to Vercel KV variable names", () => {
+    expect(
+      resolveRedisConfig({
+        KV_REST_API_URL: "https://kv.example",
+        KV_REST_API_TOKEN: "kv-token",
+        KV_REST_API_READ_ONLY_TOKEN: "read-only-token",
+      }),
+    ).toEqual({
+      url: "https://kv.example",
+      token: "kv-token",
+    });
+  });
+
+  it("does not use the read-only KV token", () => {
+    expect(
+      resolveRedisConfig({
+        KV_REST_API_URL: "https://kv.example",
+        KV_REST_API_READ_ONLY_TOKEN: "read-only-token",
+      }),
+    ).toEqual({
+      url: "https://kv.example",
+      token: undefined,
+    });
   });
 });
