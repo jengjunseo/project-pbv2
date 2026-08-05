@@ -1,184 +1,105 @@
-# Project PB v2
+# Project PB v3
 
-Project PB v2 is a temporary transfer app. Users open one of the numbers from 0 to 99, save text and an optional small file, then open the same number from another device within 10 minutes.
+PBV3 is a tiny, login-free transfer pocket. Open a number from **0 to 99**, put text and optionally one small file into it, then open the same number on another device.
 
-PB is intentionally small. It is not a login product, cloud drive, chat app, or secure vault.
+The product is deliberately narrow: **no accounts, no timers, no chat, no history, no cloud-drive complexity.**
 
-## Features
-- 0-99 slot based transfer.
-- Text payload up to 10,000 characters.
-- Optional file upload up to 5MB.
-- 10 minute Redis TTL.
-- Countdown and expired UI.
-- Explicit clear action.
-- Dangerous file extensions blocked.
-- Sanitized Blob paths.
+## What changed from PBV2
 
-## Tech Stack
-- Next.js App Router
-- TypeScript
-- Tailwind CSS
-- Upstash Redis
-- Vercel Blob
-- Zod
-- nanoid
-- ESLint
-- Vitest
+PBV2 treated every slot as a 10-minute temporary item. PBV3 removes the TTL entirely.
 
-## Local Setup
-Install dependencies:
+- Slots persist indefinitely by default.
+- Saving a slot makes it the newest slot.
+- When the configured soft storage limit is exceeded, PBV3 evicts the **oldest-updated slots first**.
+- Reading a slot never updates timestamps. This keeps the hot read path to one Redis `GET`.
+- Files upload directly from the browser to Vercel Blob.
+- The slot page is server-rendered from Redis for a fast first paint, then becomes an interactive editor in the browser.
 
-```bash
-npm install
+## Performance model
+
+**Read path**
+1. Request `/slot/17`.
+2. Next.js reads `pb:v3:slot:17` from Upstash Redis once.
+3. The page renders with that data.
+4. File downloads go directly through Vercel Blob CDN.
+
+There is no TTL check, no cleanup pass, no list scan, and no read-side write.
+
+**Write path**
+1. Optional file uploads browser -> Blob.
+2. Slot metadata/text is saved to Redis.
+3. Usage + recency metadata is updated.
+4. If the soft cap is exceeded, oldest-updated slots are removed until usage is under the cap.
+5. Replaced/evicted Blob objects are deleted best-effort after the Redis commit.
+
+Writes are allowed to do more work so reads stay extremely cheap.
+
+## Storage model
+
+Redis keys:
+
+```text
+pb:v3:slot:{0..99}    slot JSON
+pb:v3:order           sorted set; score = updatedAt
+pb:v3:usage           logical bytes currently stored
+pb:v3:write-lock      short write-side consistency lock
 ```
 
-Create `.env.local` from `.env.example`:
+Blob paths:
 
-```bash
-cp .env.example .env.local
+```text
+pb-v3/slot-{id}/{random}-{sanitized-name}
 ```
 
-Fill these values:
+`PB_STORAGE_LIMIT_BYTES` is a **soft logical cap**, not the provider's hard quota. Set it below your real Blob/Redis plan limit (for example 70-80%) so direct uploads still have headroom before eviction runs.
+
+## Defaults
+
+- Slot range: `0-99`
+- Text: up to `30,000` characters
+- File: up to `10 MiB` by default
+- Storage soft cap: `512 MiB` by default
+- Retention: no TTL
+- Eviction: oldest `updatedAt` first
+
+Both file and storage limits can be changed with environment variables.
+
+## Environment
 
 ```env
 UPSTASH_REDIS_REST_URL=
 UPSTASH_REDIS_REST_TOKEN=
 BLOB_READ_WRITE_TOKEN=
 NEXT_PUBLIC_APP_NAME=PB
+PB_STORAGE_LIMIT_BYTES=536870912
+PB_MAX_FILE_BYTES=10485760
 ```
 
-Run locally:
+The app also accepts the older Vercel KV variable names as a Redis fallback:
+
+```env
+KV_REST_API_URL=
+KV_REST_API_TOKEN=
+```
+
+## Local development
 
 ```bash
+npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`.
+Quality gates:
 
-## Scripts
 ```bash
-npm run lint
 npm run typecheck
 npm run test
+npm run lint
 npm run build
 ```
 
-`lint` uses `eslint .` because current Next.js releases no longer rely on the older `next lint` command as the primary lint entrypoint.
+## Security boundary
 
-## Vercel Deployment
-1. Import `jengjunseo/project-pbv2` into Vercel.
-2. Connect an Upstash Redis database.
-3. Connect a Vercel Blob store.
-4. Add the environment variables from `.env.example` to the Vercel project.
-5. Deploy.
+PB slots are public-by-number and are **not a secure vault**. Anyone who knows or guesses a slot number can read, overwrite, or clear it. Do not use PB for passwords, credentials, private identity documents, or other sensitive material.
 
-Recommended Vercel settings:
-- Framework Preset: `Next.js`
-- Install Command: `npm install`
-- Build Command: `npm run build`
-- Output Directory: leave the Vercel default
-
-After changing environment variables in Vercel, redeploy the latest deployment so serverless functions receive the new values.
-
-## Environment Variables
-Set these in Vercel Project Settings -> Environment Variables for Production, Preview, and Development as needed:
-
-| Name | Required | Source |
-| --- | --- | --- |
-| `UPSTASH_REDIS_REST_URL` | Yes for Redis, preferred | Upstash Redis REST URL |
-| `UPSTASH_REDIS_REST_TOKEN` | Yes for Redis, preferred | Upstash Redis REST token |
-| `KV_REST_API_URL` | Redis fallback | Vercel KV REST URL |
-| `KV_REST_API_TOKEN` | Redis fallback | Vercel KV write token |
-| `BLOB_READ_WRITE_TOKEN` | Yes for file upload | Vercel Blob store token |
-| `NEXT_PUBLIC_APP_NAME` | No | Optional display name |
-
-Do not expose `UPSTASH_REDIS_REST_TOKEN`, `KV_REST_API_TOKEN`, or `BLOB_READ_WRITE_TOKEN` in client-side code. Only `NEXT_PUBLIC_*` variables are safe for browser exposure. Do not use `KV_REST_API_READ_ONLY_TOKEN` for PB because saving and clearing slots require write access.
-
-## Upstash Redis
-Create an Upstash Redis database and copy:
-- `UPSTASH_REDIS_REST_URL`
-- `UPSTASH_REDIS_REST_TOKEN`
-
-When using Vercel KV/Redis integration, the app also accepts:
-- `KV_REST_API_URL`
-- `KV_REST_API_TOKEN`
-
-The app prefers the `UPSTASH_*` names when both naming schemes exist.
-
-The app stores each slot at:
-
-```txt
-pb:slot:{id}
-```
-
-Every save uses a 600 second TTL.
-
-## Vercel Blob
-Create a Blob store and set:
-
-```env
-BLOB_READ_WRITE_TOKEN=
-```
-
-Browser uploads use `/api/upload` and Vercel Blob client upload tokens. Blob paths use:
-
-```txt
-pb/slot-{id}/{random}-{sanitized-original-name}
-```
-
-## Expiration Policy
-Redis TTL is the source of truth. When Redis expires, users see an empty slot. Blob cleanup is attempted when the user clears a slot, but the product does not require background cron cleanup.
-
-## Deployment Troubleshooting
-- `Redis environment variables are not configured.`: add `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`, or use the Vercel KV names `KV_REST_API_URL` and `KV_REST_API_TOKEN`, then redeploy.
-- Blob upload returns `BLOB_ERROR`: confirm `BLOB_READ_WRITE_TOKEN` is set for the active Vercel environment and the Blob store is connected to the project. `BLOB_WEBHOOK_PUBLIC_KEY` and `BLOB_STORE_ID` are not enough for client uploads.
-- Save succeeds but a file link is missing: check that the browser upload completed before `/api/slot` save and that file metadata is present in the POST body.
-- Slot is empty sooner than expected: Redis TTL is 600 seconds from the last successful save; saving again resets the 10 minute window.
-- Build fails on Vercel but works locally: compare the Node/npm versions and run `npm run typecheck`, `npm run test`, and `npm run build` locally before redeploying.
-
-## File Limits
-Maximum file size is 5MB.
-
-Allowed MIME types:
-- `image/png`
-- `image/jpeg`
-- `image/webp`
-- `application/pdf`
-- `text/plain`
-- `text/markdown`
-- `application/json`
-- `application/zip`
-- `application/vnd.openxmlformats-officedocument.wordprocessingml.document`
-- `application/vnd.openxmlformats-officedocument.presentationml.presentation`
-- `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
-
-`.ipynb` is allowed by extension.
-
-Blocked extensions:
-- `exe`
-- `bat`
-- `cmd`
-- `sh`
-- `ps1`
-- `apk`
-- `dmg`
-- `msi`
-- `jar`
-- `js`
-- `vbs`
-- `scr`
-
-## Security Boundaries
-PB prioritizes fast temporary transfer, not strong secrecy. Users should not upload sensitive personal data, credentials, private documents, or dangerous files.
-
-Implemented safeguards:
-- No accounts or user profiles.
-- Slot id validation.
-- 10 minute Redis TTL.
-- File size limit.
-- MIME allowlist.
-- Blocked executable/script extensions.
-- Sanitized Blob paths.
-
-## QA
-Manual QA lives in `.ai/QA_CHECKLIST.md`.
+Executable and active-content file types are blocked. File size and path metadata are revalidated on the server before Blob upload tokens are issued.

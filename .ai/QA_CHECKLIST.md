@@ -1,19 +1,16 @@
-# QA Checklist
+# PBV3 QA
 
-- [ ] Save and read slot 0.
-- [ ] Save and read slot 99.
-- [ ] Reject slot 100.
-- [ ] Reject slot -1.
-- [ ] Reject non-numeric slot input.
-- [ ] Save text and read it from another browser.
-- [ ] Confirm 10 minute TTL is set.
-- [ ] Confirm clear button removes Redis data.
-- [ ] Upload a file smaller than 5MB.
-- [ ] Reject a file larger than 5MB.
-- [ ] Reject blocked extensions.
-- [ ] Confirm file names are sanitized in Blob paths.
-- [ ] Confirm production build succeeds.
-
-## Manual Review Notes
-- GitHub repository was confirmed public and empty.
-- Dependency installation and runtime checks require npm or another package manager in the execution environment.
+- [ ] Home accepts 0 and 99; rejects 100 and non-numeric input.
+- [ ] Empty slot renders immediately and can save text.
+- [ ] Reloading the slot preserves data indefinitely (no TTL).
+- [ ] Another device/browser can open the same slot.
+- [ ] Text-only save does not touch Blob.
+- [ ] File upload works under configured max size.
+- [ ] Replacing a file removes the previous Blob best-effort.
+- [ ] Removing a file then saving keeps text and deletes the old Blob.
+- [ ] Clear removes Redis slot, order member, usage bytes, and Blob best-effort.
+- [ ] Soft-cap pressure evicts oldest-updated slots, never the just-saved slot.
+- [ ] Focus refresh does not overwrite unsaved local edits.
+- [ ] Ctrl/Cmd+S saves.
+- [ ] Mobile sticky save bar works.
+- [ ] `npm run typecheck`, `npm run test`, `npm run lint`, `npm run build` all pass.

@@ -1,38 +1,19 @@
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { NextResponse } from "next/server";
-import {
-  ALLOWED_MIME_TYPES,
-  getFileExtension,
-  validateFileBasics,
-  validateSlotId,
-} from "@/lib/validation";
-import type { PBErrorCode } from "@/types/pb";
+import { getMaxFileBytes } from "@/lib/config";
+import { checkWriteRateLimit } from "@/lib/rate-limit";
+import { cleanupOrphanBlob } from "@/lib/slot-store";
+import { parseSlotId, validateBlobPath, validateUploadMeta } from "@/lib/validation";
 
 export const runtime = "nodejs";
 
-type ClientPayload = {
-  slotId: unknown;
-  name: string;
-  size: number;
-  type: string;
-};
+export async function POST(request: Request) {
+  if (!process.env.BLOB_READ_WRITE_TOKEN) return NextResponse.json({ ok: false, error: { message: "Vercel Blob이 설정되지 않았습니다." } }, { status: 500 });
+  if (!(await checkWriteRateLimit(request))) return NextResponse.json({ ok: false, error: { message: "업로드 요청이 너무 많습니다." } }, { status: 429 });
 
-export async function POST(request: Request): Promise<NextResponse> {
   let body: HandleUploadBody;
-
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    return errorResponse(
-      "BLOB_ERROR",
-      "Vercel Blob is not configured. Set BLOB_READ_WRITE_TOKEN to enable file uploads.",
-      500,
-    );
-  }
-
-  try {
-    body = (await request.json()) as HandleUploadBody;
-  } catch {
-    return errorResponse("UNKNOWN_ERROR", "Request body must be valid JSON.", 400);
-  }
+  try { body = (await request.json()) as HandleUploadBody; }
+  catch { return NextResponse.json({ ok: false, error: { message: "잘못된 업로드 요청입니다." } }, { status: 400 }); }
 
   try {
     const response = await handleUpload({
@@ -40,102 +21,43 @@ export async function POST(request: Request): Promise<NextResponse> {
       request,
       onBeforeGenerateToken: async (pathname, clientPayload) => {
         const payload = parseClientPayload(clientPayload);
-        const slotId = validateSlotId(payload.slotId);
-
-        if (!slotId.ok) {
-          throw new Error(slotId.message);
-        }
-
-        const file = validateFileBasics({
-          name: payload.name,
-          size: payload.size,
-          type: payload.type,
-        });
-
-        if (!file.ok) {
-          throw new Error(file.message);
-        }
-
-        const expectedPrefix = `pb/slot-${slotId.value}/`;
-        if (!pathname.startsWith(expectedPrefix)) {
-          throw new Error("Blob path does not match the requested slot.");
-        }
-
-        const pathCheck = validateFileBasics({
-          name: pathname,
-          size: payload.size,
-          type: payload.type,
-        });
-
-        if (!pathCheck.ok) {
-          throw new Error(pathCheck.message);
-        }
-
-        const isNotebook = getFileExtension(payload.name) === "ipynb";
-        const contentTypes = isNotebook
-          ? [...ALLOWED_MIME_TYPES, "application/x-ipynb+json", "application/octet-stream"]
-          : [...ALLOWED_MIME_TYPES];
-
+        const id = parseSlotId(payload.slotId);
+        if (id === null) throw new Error("슬롯 번호가 올바르지 않습니다.");
+        const validation = validateUploadMeta(payload);
+        if (!validation.ok) throw new Error(validation.message);
+        if (!validateBlobPath(id, pathname)) throw new Error("파일 경로가 슬롯과 일치하지 않습니다.");
         return {
-          allowedContentTypes: contentTypes,
-          maximumSizeInBytes: 5 * 1024 * 1024,
+          allowedContentTypes: [payload.type || "application/octet-stream"],
+          maximumSizeInBytes: getMaxFileBytes(),
           addRandomSuffix: false,
-          tokenPayload: JSON.stringify({
-            slotId: slotId.value,
-            name: payload.name,
-            size: payload.size,
-            type: payload.type,
-          }),
+          tokenPayload: JSON.stringify({ slotId: id, name: payload.name }),
         };
       },
-      onUploadCompleted: async () => {
-        return;
-      },
+      onUploadCompleted: async () => undefined,
     });
-
     return NextResponse.json(response);
-  } catch (error) {
-    return errorResponse("BLOB_ERROR", messageFrom(error), 400);
+  } catch (cause) {
+    return NextResponse.json({ ok: false, error: { message: cause instanceof Error ? cause.message : "업로드에 실패했습니다." } }, { status: 400 });
   }
 }
 
-function parseClientPayload(rawPayload: string | null | undefined): ClientPayload {
-  if (!rawPayload) {
-    throw new Error("Upload metadata is missing.");
-  }
-
-  let parsed: ClientPayload;
-
-  try {
-    parsed = JSON.parse(rawPayload) as ClientPayload;
-  } catch {
-    throw new Error("Upload metadata must be valid JSON.");
-  }
-
-  if (
-    typeof parsed.name !== "string" ||
-    typeof parsed.size !== "number" ||
-    typeof parsed.type !== "string"
-  ) {
-    throw new Error("Upload metadata is invalid.");
-  }
-
-  return parsed;
+export async function DELETE(request: Request) {
+  if (!process.env.BLOB_READ_WRITE_TOKEN) return NextResponse.json({ ok: true });
+  let payload: { slotId?: unknown; pathname?: unknown };
+  try { payload = (await request.json()) as { slotId?: unknown; pathname?: unknown }; }
+  catch { return NextResponse.json({ ok: false }, { status: 400 }); }
+  const slotId = parseSlotId(payload.slotId);
+  const pathname = typeof payload.pathname === "string" ? payload.pathname : "";
+  if (slotId === null || !validateBlobPath(slotId, pathname)) return NextResponse.json({ ok: false }, { status: 400 });
+  try { await cleanupOrphanBlob(pathname, slotId); } catch { /* keep rather than risk deleting a live attachment */ }
+  return NextResponse.json({ ok: true });
 }
 
-function errorResponse(code: PBErrorCode, message: string, status: number) {
-  return NextResponse.json(
-    {
-      ok: false,
-      error: {
-        code,
-        message,
-      },
-    },
-    { status },
-  );
-}
-
-function messageFrom(error: unknown): string {
-  return error instanceof Error ? error.message : "Unknown Blob error.";
+function parseClientPayload(raw: string | null | undefined): { slotId: unknown; name: string; size: number; type: string } {
+  if (!raw) throw new Error("업로드 메타데이터가 없습니다.");
+  const parsed = JSON.parse(raw) as Record<string, unknown>;
+  if (typeof parsed.name !== "string" || typeof parsed.size !== "number" || typeof parsed.type !== "string") {
+    throw new Error("업로드 메타데이터가 올바르지 않습니다.");
+  }
+  return { slotId: parsed.slotId, name: parsed.name, size: parsed.size, type: parsed.type };
 }
