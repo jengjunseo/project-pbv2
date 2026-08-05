@@ -98,7 +98,7 @@ export async function saveSlot(input: {
     const evictedIds: number[] = [];
 
     while (usage > limit) {
-      const oldest = await redis.zrange<string>(ORDER_KEY, 0, 0);
+      const oldest = await redis.zrange<string[]>(ORDER_KEY, 0, 0);
       const member = oldest[0];
       if (member === undefined) break;
 
@@ -194,7 +194,7 @@ async function releaseWriteLock(token: string): Promise<void> {
     return 0
   `;
 
-  await getRedis().eval<number>(script, [WRITE_LOCK_KEY], [token]);
+  await getRedis().eval(script, [WRITE_LOCK_KEY], [token]);
 }
 
 function sleep(ms: number): Promise<void> {
