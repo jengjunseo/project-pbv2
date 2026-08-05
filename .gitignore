@@ -8,5 +8,4 @@ out
 coverage
 .DS_Store
 *.log
-
 *.tsbuildinfo

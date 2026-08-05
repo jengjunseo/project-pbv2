@@ -1,5 +1,6 @@
 export type PBFileMeta = {
   url: string;
+  downloadUrl?: string;
   pathname: string;
   name: string;
   size: number;
@@ -15,6 +16,17 @@ export type PBSlot = {
   updatedAt: number;
   bytes: number;
   revision: number;
+};
+
+export type PendingUpload = {
+  slotId: number;
+  pathname: string;
+  expectedName: string;
+  expectedSize: number;
+  expectedType: string;
+  issuedAt: number;
+  completedAt: number | null;
+  blob: PBFileMeta | null;
 };
 
 export type SlotReadResponse =

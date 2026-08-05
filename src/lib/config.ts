@@ -1,6 +1,8 @@
 import {
   DEFAULT_MAX_FILE_BYTES,
   DEFAULT_STORAGE_LIMIT_BYTES,
+  DEFAULT_UPLOAD_RATE_LIMIT,
+  DEFAULT_WRITE_RATE_LIMIT,
 } from "@/lib/constants";
 
 function positiveInt(value: string | undefined, fallback: number): number {
@@ -14,5 +16,22 @@ export function getMaxFileBytes(): number {
 }
 
 export function getStorageLimitBytes(): number {
-  return positiveInt(process.env.PB_STORAGE_LIMIT_BYTES, DEFAULT_STORAGE_LIMIT_BYTES);
+  return positiveInt(
+    process.env.PB_STORAGE_LIMIT_BYTES,
+    DEFAULT_STORAGE_LIMIT_BYTES,
+  );
+}
+
+export function getWriteRateLimit(): number {
+  return positiveInt(
+    process.env.PB_WRITE_RATE_LIMIT_PER_MINUTE,
+    DEFAULT_WRITE_RATE_LIMIT,
+  );
+}
+
+export function getUploadRateLimit(): number {
+  return positiveInt(
+    process.env.PB_UPLOAD_RATE_LIMIT_PER_MINUTE,
+    DEFAULT_UPLOAD_RATE_LIMIT,
+  );
 }

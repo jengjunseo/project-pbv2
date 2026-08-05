@@ -1,5 +1,8 @@
 import { Redis } from "@upstash/redis";
-import { SLOT_KEY_PREFIX } from "@/lib/constants";
+import {
+  PENDING_KEY_PREFIX,
+  SLOT_KEY_PREFIX,
+} from "@/lib/constants";
 
 let redisClient: Redis | null = null;
 
@@ -10,7 +13,10 @@ type RedisEnv = {
   KV_REST_API_TOKEN?: string;
 } & Record<string, string | undefined>;
 
-export function resolveRedisConfig(env: RedisEnv): { url?: string; token?: string } {
+export function resolveRedisConfig(env: RedisEnv): {
+  url?: string;
+  token?: string;
+} {
   return {
     url: env.UPSTASH_REDIS_REST_URL || env.KV_REST_API_URL,
     token: env.UPSTASH_REDIS_REST_TOKEN || env.KV_REST_API_TOKEN,
@@ -33,4 +39,8 @@ export function getRedis(): Redis {
 
 export function slotKey(id: number): string {
   return `${SLOT_KEY_PREFIX}${id}`;
+}
+
+export function pendingKey(pathname: string): string {
+  return `${PENDING_KEY_PREFIX}${encodeURIComponent(pathname)}`;
 }

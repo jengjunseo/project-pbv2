@@ -3,7 +3,6 @@ import {
   getFileExtension,
   parseSlotId,
   validateBlobPath,
-  validateBlobUrl,
   validateUploadMeta,
 } from "@/lib/validation";
 
@@ -13,37 +12,42 @@ describe("slot validation", () => {
     expect(parseSlotId("99")).toBe(99);
   });
 
-  it("rejects missing, malformed, and out-of-range values", () => {
-    expect(parseSlotId(null)).toBeNull();
-    expect(parseSlotId("")).toBeNull();
+  it("rejects malformed and out-of-range values", () => {
     expect(parseSlotId("-1")).toBeNull();
     expect(parseSlotId("100")).toBeNull();
+    expect(parseSlotId("1.5")).toBeNull();
     expect(parseSlotId("abc")).toBeNull();
+    expect(parseSlotId(null)).toBeNull();
   });
 });
 
 describe("file validation", () => {
-  it("blocks active content", () => {
-    expect(validateUploadMeta({ name: "payload.exe", size: 10, type: "application/octet-stream" }).ok).toBe(false);
-    expect(validateUploadMeta({ name: "page.html", size: 10, type: "text/html" }).ok).toBe(false);
+  it("blocks executable and active content", () => {
+    expect(
+      validateUploadMeta({
+        name: "payload.exe",
+        size: 10,
+        type: "application/octet-stream",
+      }).ok,
+    ).toBe(false);
+    expect(
+      validateUploadMeta({ name: "page.html", size: 10, type: "text/html" }).ok,
+    ).toBe(false);
   });
 
-  it("allows source files", () => {
-    expect(validateUploadMeta({ name: "main.ts", size: 10, type: "text/plain" }).ok).toBe(true);
+  it("allows ordinary source files", () => {
+    expect(
+      validateUploadMeta({ name: "main.ts", size: 10, type: "text/plain" }).ok,
+    ).toBe(true);
   });
 
-  it("extracts extensions", () => {
+  it("extracts normalized extensions", () => {
     expect(getFileExtension("hello.world.JSON")).toBe("json");
   });
 
-  it("binds Blob paths to a slot", () => {
+  it("binds blob paths to one slot", () => {
     expect(validateBlobPath(17, "pb-v3/slot-17/abc-note.txt")).toBe(true);
     expect(validateBlobPath(17, "pb-v3/slot-18/abc-note.txt")).toBe(false);
-  });
-
-  it("accepts only Vercel Blob HTTPS URLs", () => {
-    expect(validateBlobUrl("https://store.public.blob.vercel-storage.com/file.txt")).toBe(true);
-    expect(validateBlobUrl("https://example.com/file.txt")).toBe(false);
-    expect(validateBlobUrl("javascript:alert(1)")).toBe(false);
+    expect(validateBlobPath(17, "pb-v3/slot-17/../escape.txt")).toBe(false);
   });
 });

@@ -13,7 +13,8 @@ import type { PBFileMeta } from "@/types/pb";
 export const slotIdSchema = z.number().int().min(SLOT_MIN).max(SLOT_MAX);
 
 const fileMetaSchema: z.ZodType<PBFileMeta> = z.object({
-  url: z.string().url(),
+  url: z.url(),
+  downloadUrl: z.url().optional(),
   pathname: z.string().min(1).max(500),
   name: z.string().min(1).max(180),
   size: z.number().int().positive(),
@@ -25,6 +26,7 @@ export const slotWriteSchema = z.object({
   id: slotIdSchema,
   text: z.string().max(MAX_TEXT_CHARS),
   file: fileMetaSchema.nullable(),
+  baseRevision: z.number().int().nonnegative().nullable().optional(),
 });
 
 export function parseSlotId(value: unknown): number | null {
@@ -36,6 +38,7 @@ export function parseSlotId(value: unknown): number | null {
   if (typeof value !== "string") return null;
   const normalized = value.trim();
   if (!/^\d{1,2}$/.test(normalized)) return null;
+
   const parsed = slotIdSchema.safeParse(Number(normalized));
   return parsed.success ? parsed.data : null;
 }
@@ -78,14 +81,20 @@ export function validateUploadMeta(input: {
 }
 
 export function validateBlobPath(slotId: number, pathname: string): boolean {
-  return pathname.startsWith(`pb-v3/slot-${slotId}/`) && !pathname.includes("..");
+  return (
+    pathname.startsWith(`pb-v3/slot-${slotId}/`) &&
+    !pathname.includes("..") &&
+    !pathname.includes("\\")
+  );
 }
 
-export function validateBlobUrl(rawUrl: string): boolean {
-  try {
-    const url = new URL(rawUrl);
-    return url.protocol === "https:" && url.hostname.endsWith(".blob.vercel-storage.com");
-  } catch {
-    return false;
-  }
+export function sameFile(a: PBFileMeta, b: PBFileMeta): boolean {
+  return (
+    a.pathname === b.pathname &&
+    a.url === b.url &&
+    (a.downloadUrl ?? a.url) === (b.downloadUrl ?? b.url) &&
+    a.name === b.name &&
+    a.size === b.size &&
+    a.type === b.type
+  );
 }
