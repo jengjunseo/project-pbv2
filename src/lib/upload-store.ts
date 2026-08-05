@@ -131,7 +131,7 @@ export async function collectStalePendingPaths(
 ): Promise<string[]> {
   const redis = getRedis();
   const cutoff = now - PENDING_UPLOAD_GRACE_MS;
-  const stale = await redis.zrange<string>(
+  const stale = await redis.zrange<string[]>(
     PENDING_ORDER_KEY,
     0,
     cutoff,
