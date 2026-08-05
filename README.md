@@ -11,32 +11,36 @@ PBV2 treated every slot as a 10-minute temporary item. PBV3 removes the TTL enti
 - Slots persist indefinitely by default.
 - Saving a slot makes it the newest slot.
 - When the configured soft storage limit is exceeded, PBV3 evicts the **oldest-updated slots first**.
-- Reading a slot never updates timestamps. This keeps the hot read path to one Redis `GET`.
+- Reading a slot never updates timestamps. The hot read path is one Redis `GET`.
 - Files upload directly from the browser to Vercel Blob.
-- The slot page is server-rendered from Redis for a fast first paint, then becomes an interactive editor in the browser.
+- The slot page is server-rendered from Redis for a fast first paint, then becomes interactive.
 
 ## Performance model
 
-**Read path**
+### Read path
 1. Request `/slot/17`.
-2. Next.js reads `pb:v3:slot:17` from Upstash Redis once.
+2. Next.js 16 reads `pb:v3:slot:17` from Upstash Redis once.
 3. The page renders with that data.
 4. File downloads go directly through Vercel Blob CDN.
 
-There is no TTL check, no cleanup pass, no list scan, and no read-side write.
+There is no TTL check, cleanup pass, list scan, or read-side write.
 
-**Write path**
+### Write path
 1. Optional file uploads browser -> Blob.
 2. Slot metadata/text is saved to Redis.
-3. Usage + recency metadata is updated.
+3. Usage and recency metadata are updated.
 4. If the soft cap is exceeded, oldest-updated slots are removed until usage is under the cap.
-5. Replaced/evicted Blob objects are deleted best-effort after the Redis commit.
+5. Replaced/evicted Blob objects are deleted best-effort after Redis commits.
 
 Writes are allowed to do more work so reads stay extremely cheap.
 
-## Storage model
+## Latency-first deployment
 
-Redis keys:
+`vercel.json` pins server functions to Vercel Tokyo (`hnd1`). Create the Upstash Redis primary in AWS Tokyo (`ap-northeast-1`) so the one Redis request on the read path stays close to the function. Static assets are still served through Vercel's nearby CDN points of presence.
+
+If you choose a different Redis region, change `vercel.json` to the matching Vercel compute region. Do not leave the project at Vercel's default function region when the database is in Asia.
+
+## Storage model
 
 ```text
 pb:v3:slot:{0..99}    slot JSON
@@ -51,18 +55,15 @@ Blob paths:
 pb-v3/slot-{id}/{random}-{sanitized-name}
 ```
 
-`PB_STORAGE_LIMIT_BYTES` is a **soft logical cap**, not the provider's hard quota. Set it below your real Blob/Redis plan limit (for example 70-80%) so direct uploads still have headroom before eviction runs.
+`PB_STORAGE_LIMIT_BYTES` is a **soft logical cap**, not the provider hard quota. Set it below the real Blob/Redis quota so direct uploads retain headroom before eviction runs.
 
 ## Defaults
-
 - Slot range: `0-99`
 - Text: up to `30,000` characters
-- File: up to `10 MiB` by default
-- Storage soft cap: `512 MiB` by default
+- File: up to `10 MiB`
+- Storage soft cap: `512 MiB`
 - Retention: no TTL
 - Eviction: oldest `updatedAt` first
-
-Both file and storage limits can be changed with environment variables.
 
 ## Environment
 
@@ -75,12 +76,18 @@ PB_STORAGE_LIMIT_BYTES=536870912
 PB_MAX_FILE_BYTES=10485760
 ```
 
-The app also accepts the older Vercel KV variable names as a Redis fallback:
+Older Vercel KV names are accepted as Redis fallback:
 
 ```env
 KV_REST_API_URL=
 KV_REST_API_TOKEN=
 ```
+
+## Runtime
+
+- Next.js `16.2.11` (Active LTS security release)
+- React `19.2`
+- Node.js `22` in CI
 
 ## Local development
 
@@ -100,6 +107,6 @@ npm run build
 
 ## Security boundary
 
-PB slots are public-by-number and are **not a secure vault**. Anyone who knows or guesses a slot number can read, overwrite, or clear it. Do not use PB for passwords, credentials, private identity documents, or other sensitive material.
+PB slots are public-by-number and are **not a secure vault**. Anyone who knows or guesses a slot number can read, overwrite, or clear it. Do not use PB for passwords, credentials, identity documents, or other sensitive material.
 
-Executable and active-content file types are blocked. File size and path metadata are revalidated on the server before Blob upload tokens are issued.
+Executable and active-content file types are blocked. File size, Blob host, and path metadata are revalidated on the server.

@@ -6,7 +6,7 @@ describe("payloadBytes", () => {
     expect(payloadBytes("abc", null)).toBe(3);
     expect(payloadBytes("한", null)).toBe(3);
     expect(payloadBytes("abc", {
-      url: "https://example.com/f",
+      url: "https://store.public.blob.vercel-storage.com/f",
       pathname: "x",
       name: "x",
       size: 7,

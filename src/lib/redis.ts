@@ -19,10 +19,14 @@ export function resolveRedisConfig(env: RedisEnv): { url?: string; token?: strin
 
 export function getRedis(): Redis {
   if (redisClient) return redisClient;
+
   const { url, token } = resolveRedisConfig(process.env);
   if (!url || !token) {
-    throw new Error("Redis is not configured. Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN.");
+    throw new Error(
+      "Redis is not configured. Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN.",
+    );
   }
+
   redisClient = new Redis({ url, token });
   return redisClient;
 }

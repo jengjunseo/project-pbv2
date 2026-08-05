@@ -11,5 +11,8 @@ export function formatBytes(bytes: number): string {
 }
 
 export function formatUpdatedAt(timestamp: number): string {
-  return new Intl.DateTimeFormat("ko-KR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(timestamp));
+  return new Intl.DateTimeFormat("ko-KR", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(timestamp));
 }

@@ -1,7 +1,7 @@
 function sanitizeFileName(name: string): string {
   const normalized = name.normalize("NFKC").trim();
   const safe = normalized
-    .replace(/[\\/]+/g, "-")
+    .replace(/[\/]+/g, "-")
     .replace(/[^\p{L}\p{N}._()\- ]/gu, "-")
     .replace(/\s+/g, "-")
     .replace(/-+/g, "-")

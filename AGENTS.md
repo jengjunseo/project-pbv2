@@ -9,10 +9,10 @@ PBV3 is intentionally small. Keep the product surface narrow and the critical pa
 - Eviction happens on writes only, oldest-updated slot first.
 - Files go directly browser -> Vercel Blob. Never proxy file bytes through a Next.js function.
 - Redis stores text + file metadata + ordering/usage metadata. Blob stores file bytes.
-- No login, chat, history, comments, notifications, or background cron unless the product scope explicitly changes.
+- No login, chat, history, comments, notifications, or background cron unless scope explicitly changes.
 
 ## Quality gates
 Run `npm run typecheck`, `npm run test`, `npm run lint`, and `npm run build` before shipping.
 
 ## Change discipline
-Prefer local, explicit changes. Do not introduce a framework, ORM, state library, or component library for a problem that can be solved directly in this codebase.
+Prefer local, explicit changes. Do not introduce an ORM, state library, or component library for a problem that can be solved directly here.

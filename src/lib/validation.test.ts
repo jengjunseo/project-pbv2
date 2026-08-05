@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { getFileExtension, parseSlotId, validateBlobPath, validateUploadMeta } from "@/lib/validation";
+import {
+  getFileExtension,
+  parseSlotId,
+  validateBlobPath,
+  validateBlobUrl,
+  validateUploadMeta,
+} from "@/lib/validation";
 
 describe("slot validation", () => {
   it("accepts 0 and 99", () => {
@@ -9,6 +15,7 @@ describe("slot validation", () => {
 
   it("rejects missing, malformed, and out-of-range values", () => {
     expect(parseSlotId(null)).toBeNull();
+    expect(parseSlotId("")).toBeNull();
     expect(parseSlotId("-1")).toBeNull();
     expect(parseSlotId("100")).toBeNull();
     expect(parseSlotId("abc")).toBeNull();
@@ -29,8 +36,14 @@ describe("file validation", () => {
     expect(getFileExtension("hello.world.JSON")).toBe("json");
   });
 
-  it("binds blob paths to a slot", () => {
+  it("binds Blob paths to a slot", () => {
     expect(validateBlobPath(17, "pb-v3/slot-17/abc-note.txt")).toBe(true);
     expect(validateBlobPath(17, "pb-v3/slot-18/abc-note.txt")).toBe(false);
+  });
+
+  it("accepts only Vercel Blob HTTPS URLs", () => {
+    expect(validateBlobUrl("https://store.public.blob.vercel-storage.com/file.txt")).toBe(true);
+    expect(validateBlobUrl("https://example.com/file.txt")).toBe(false);
+    expect(validateBlobUrl("javascript:alert(1)")).toBe(false);
   });
 });
