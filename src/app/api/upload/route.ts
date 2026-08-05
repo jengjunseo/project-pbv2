@@ -1,37 +1,48 @@
+import { after, NextResponse } from "next/server";
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
-import { NextResponse } from "next/server";
+import { deleteBlobPaths } from "@/lib/blob-cleanup";
+import { getMaxFileBytes, getUploadRateLimit } from "@/lib/config";
+import { checkRateLimit } from "@/lib/rate-limit";
 import {
-  ALLOWED_MIME_TYPES,
-  getFileExtension,
-  validateFileBasics,
-  validateSlotId,
+  completePendingUpload,
+  registerPendingUpload,
+  removePendingUpload,
+} from "@/lib/upload-store";
+import {
+  parseSlotId,
+  validateBlobPath,
+  validateUploadMeta,
 } from "@/lib/validation";
-import type { PBErrorCode } from "@/types/pb";
 
 export const runtime = "nodejs";
 
-type ClientPayload = {
-  slotId: unknown;
-  name: string;
-  size: number;
-  type: string;
-};
-
 export async function POST(request: Request): Promise<NextResponse> {
-  let body: HandleUploadBody;
-
   if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    return errorResponse(
-      "BLOB_ERROR",
-      "Vercel Blob is not configured. Set BLOB_READ_WRITE_TOKEN to enable file uploads.",
-      500,
+    return NextResponse.json(
+      { ok: false, error: { message: "Vercel Blob이 설정되지 않았습니다." } },
+      { status: 500 },
     );
   }
 
+  let body: HandleUploadBody;
   try {
     body = (await request.json()) as HandleUploadBody;
   } catch {
-    return errorResponse("UNKNOWN_ERROR", "Request body must be valid JSON.", 400);
+    return NextResponse.json(
+      { ok: false, error: { message: "잘못된 업로드 요청입니다." } },
+      { status: 400 },
+    );
+  }
+
+  const action = (body as { type?: string }).type;
+  if (
+    action === "blob.generate-client-token" &&
+    !(await checkRateLimit(request, "upload", getUploadRateLimit()))
+  ) {
+    return NextResponse.json(
+      { ok: false, error: { message: "업로드 요청이 너무 많습니다." } },
+      { status: 429 },
+    );
   }
 
   try {
@@ -40,76 +51,98 @@ export async function POST(request: Request): Promise<NextResponse> {
       request,
       onBeforeGenerateToken: async (pathname, clientPayload) => {
         const payload = parseClientPayload(clientPayload);
-        const slotId = validateSlotId(payload.slotId);
+        const id = parseSlotId(payload.slotId);
+        if (id === null) throw new Error("슬롯 번호가 올바르지 않습니다.");
 
-        if (!slotId.ok) {
-          throw new Error(slotId.message);
+        const validation = validateUploadMeta(payload);
+        if (!validation.ok) throw new Error(validation.message);
+        if (!validateBlobPath(id, pathname)) {
+          throw new Error("파일 경로가 슬롯과 일치하지 않습니다.");
         }
 
-        const file = validateFileBasics({
+        await registerPendingUpload({
+          slotId: id,
+          pathname,
           name: payload.name,
           size: payload.size,
           type: payload.type,
         });
 
-        if (!file.ok) {
-          throw new Error(file.message);
-        }
-
-        const expectedPrefix = `pb/slot-${slotId.value}/`;
-        if (!pathname.startsWith(expectedPrefix)) {
-          throw new Error("Blob path does not match the requested slot.");
-        }
-
-        const pathCheck = validateFileBasics({
-          name: pathname,
-          size: payload.size,
-          type: payload.type,
-        });
-
-        if (!pathCheck.ok) {
-          throw new Error(pathCheck.message);
-        }
-
-        const isNotebook = getFileExtension(payload.name) === "ipynb";
-        const contentTypes = isNotebook
-          ? [...ALLOWED_MIME_TYPES, "application/x-ipynb+json", "application/octet-stream"]
-          : [...ALLOWED_MIME_TYPES];
-
         return {
-          allowedContentTypes: contentTypes,
-          maximumSizeInBytes: 5 * 1024 * 1024,
+          allowedContentTypes: [payload.type || "application/octet-stream"],
+          maximumSizeInBytes: getMaxFileBytes(),
           addRandomSuffix: false,
-          tokenPayload: JSON.stringify({
-            slotId: slotId.value,
-            name: payload.name,
-            size: payload.size,
-            type: payload.type,
-          }),
+          validUntil: Date.now() + 5 * 60 * 1000,
+          cacheControlMaxAge: 60,
+          tokenPayload: JSON.stringify({ slotId: id, pathname }),
         };
       },
-      onUploadCompleted: async () => {
-        return;
+      onUploadCompleted: async ({ blob, tokenPayload }) => {
+        const payload = parseTokenPayload(tokenPayload);
+        await completePendingUpload({
+          slotId: payload.slotId,
+          pathname: blob.pathname,
+          url: blob.url,
+          downloadUrl: blob.downloadUrl,
+          contentType: blob.contentType,
+        });
       },
     });
 
     return NextResponse.json(response);
-  } catch (error) {
-    return errorResponse("BLOB_ERROR", messageFrom(error), 400);
+  } catch (cause) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: {
+          message: cause instanceof Error ? cause.message : "업로드에 실패했습니다.",
+        },
+      },
+      { status: 400 },
+    );
   }
 }
 
-function parseClientPayload(rawPayload: string | null | undefined): ClientPayload {
-  if (!rawPayload) {
-    throw new Error("Upload metadata is missing.");
+export async function DELETE(request: Request): Promise<NextResponse> {
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    return NextResponse.json({ ok: true });
   }
 
-  let parsed: ClientPayload;
-
+  let payload: { slotId?: unknown; pathname?: unknown };
   try {
-    parsed = JSON.parse(rawPayload) as ClientPayload;
+    payload = (await request.json()) as {
+      slotId?: unknown;
+      pathname?: unknown;
+    };
   } catch {
-    throw new Error("Upload metadata must be valid JSON.");
+    return NextResponse.json({ ok: false }, { status: 400 });
+  }
+
+  const slotId = parseSlotId(payload.slotId);
+  const pathname = typeof payload.pathname === "string" ? payload.pathname : "";
+  if (slotId === null || !validateBlobPath(slotId, pathname)) {
+    return NextResponse.json({ ok: false }, { status: 400 });
+  }
+
+  const removable = await removePendingUpload(slotId, pathname);
+  if (removable) after(() => deleteBlobPaths([pathname]));
+
+  return NextResponse.json({ ok: true });
+}
+
+function parseClientPayload(raw: string | null | undefined): {
+  slotId: unknown;
+  name: string;
+  size: number;
+  type: string;
+} {
+  if (!raw) throw new Error("업로드 메타데이터가 없습니다.");
+
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    throw new Error("업로드 메타데이터가 올바른 JSON이 아닙니다.");
   }
 
   if (
@@ -117,25 +150,26 @@ function parseClientPayload(rawPayload: string | null | undefined): ClientPayloa
     typeof parsed.size !== "number" ||
     typeof parsed.type !== "string"
   ) {
-    throw new Error("Upload metadata is invalid.");
+    throw new Error("업로드 메타데이터가 올바르지 않습니다.");
   }
 
-  return parsed;
+  return {
+    slotId: parsed.slotId,
+    name: parsed.name,
+    size: parsed.size,
+    type: parsed.type,
+  };
 }
 
-function errorResponse(code: PBErrorCode, message: string, status: number) {
-  return NextResponse.json(
-    {
-      ok: false,
-      error: {
-        code,
-        message,
-      },
-    },
-    { status },
-  );
-}
-
-function messageFrom(error: unknown): string {
-  return error instanceof Error ? error.message : "Unknown Blob error.";
+function parseTokenPayload(raw: string | null | undefined): {
+  slotId: number;
+  pathname: string;
+} {
+  if (!raw) throw new Error("Upload token payload is missing.");
+  const parsed = JSON.parse(raw) as Record<string, unknown>;
+  const slotId = parseSlotId(parsed.slotId);
+  if (slotId === null || typeof parsed.pathname !== "string") {
+    throw new Error("Upload token payload is invalid.");
+  }
+  return { slotId, pathname: parsed.pathname };
 }

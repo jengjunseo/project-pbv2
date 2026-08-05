@@ -1,26 +1,36 @@
-import { NumberForm } from "@/components/NumberForm";
+import Link from "next/link";
+import { HomeLauncher } from "@/components/HomeLauncher";
 
-export default function Home() {
+export default function HomePage() {
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col justify-center px-5 py-10">
-      <section className="rounded-lg border border-stone-200 bg-white p-6 shadow-soft sm:p-8">
-        <div className="mb-8">
-          <p className="mb-3 text-sm font-semibold uppercase tracking-[0.18em] text-teal-700">
-            Temporary pocket
-          </p>
-          <h1 className="text-5xl font-bold tracking-normal text-stone-950 sm:text-6xl">
-            PB
+    <main className="home-shell">
+      <div className="home-noise" aria-hidden="true" />
+      <section className="home-card">
+        <header className="brand-row">
+          <Link className="brand" href="/" aria-label="PB 홈">
+            PB<span className="brand-dot">.</span>
+          </Link>
+          <span className="permanent-badge">NO TIMER</span>
+        </header>
+
+        <div className="hero-copy">
+          <p className="eyebrow">PUBLIC POCKET · 00—99</p>
+          <h1>
+            번호 하나면
+            <br />
+            끝.
           </h1>
-          <p className="mt-4 max-w-2xl text-base leading-7 text-stone-600 sm:text-lg">
-            0~99 번호로 10분 동안 텍스트와 파일을 전달하세요.
+          <p className="hero-subtitle">
+            로그인도, 만료 시간도 없습니다. 같은 번호를 다른 기기에서 열면 텍스트와 파일이 그대로 있습니다.
           </p>
         </div>
 
-        <NumberForm />
+        <HomeLauncher />
 
-        <p className="mt-7 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">
-          PB는 임시 전달함입니다. 중요한 개인정보나 민감한 파일은 올리지 마세요.
-        </p>
+        <footer className="home-footer">
+          <span>영구 보관 · 공간 부족 시 오래된 슬롯부터 정리</span>
+          <span>민감한 정보 저장 금지</span>
+        </footer>
       </section>
     </main>
   );

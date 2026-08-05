@@ -1,0 +1,53 @@
+import { describe, expect, it } from "vitest";
+import {
+  getFileExtension,
+  parseSlotId,
+  validateBlobPath,
+  validateUploadMeta,
+} from "@/lib/validation";
+
+describe("slot validation", () => {
+  it("accepts 0 and 99", () => {
+    expect(parseSlotId("0")).toBe(0);
+    expect(parseSlotId("99")).toBe(99);
+  });
+
+  it("rejects malformed and out-of-range values", () => {
+    expect(parseSlotId("-1")).toBeNull();
+    expect(parseSlotId("100")).toBeNull();
+    expect(parseSlotId("1.5")).toBeNull();
+    expect(parseSlotId("abc")).toBeNull();
+    expect(parseSlotId(null)).toBeNull();
+  });
+});
+
+describe("file validation", () => {
+  it("blocks executable and active content", () => {
+    expect(
+      validateUploadMeta({
+        name: "payload.exe",
+        size: 10,
+        type: "application/octet-stream",
+      }).ok,
+    ).toBe(false);
+    expect(
+      validateUploadMeta({ name: "page.html", size: 10, type: "text/html" }).ok,
+    ).toBe(false);
+  });
+
+  it("allows ordinary source files", () => {
+    expect(
+      validateUploadMeta({ name: "main.ts", size: 10, type: "text/plain" }).ok,
+    ).toBe(true);
+  });
+
+  it("extracts normalized extensions", () => {
+    expect(getFileExtension("hello.world.JSON")).toBe("json");
+  });
+
+  it("binds blob paths to one slot", () => {
+    expect(validateBlobPath(17, "pb-v3/slot-17/abc-note.txt")).toBe(true);
+    expect(validateBlobPath(17, "pb-v3/slot-18/abc-note.txt")).toBe(false);
+    expect(validateBlobPath(17, "pb-v3/slot-17/../escape.txt")).toBe(false);
+  });
+});

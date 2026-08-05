@@ -1,8 +1,7 @@
-export type SlotId = number;
-
 export type PBFileMeta = {
   url: string;
-  pathname?: string;
+  downloadUrl?: string;
+  pathname: string;
   name: string;
   size: number;
   type: string;
@@ -10,37 +9,40 @@ export type PBFileMeta = {
 };
 
 export type PBSlot = {
-  id: SlotId;
+  id: number;
   text: string;
-  file?: PBFileMeta | null;
+  file: PBFileMeta | null;
   createdAt: number;
   updatedAt: number;
-  expiresAt: number;
+  bytes: number;
+  revision: number;
 };
 
-export type PBErrorCode =
-  | "INVALID_SLOT_ID"
-  | "TEXT_TOO_LONG"
-  | "EMPTY_PAYLOAD"
-  | "FILE_TOO_LARGE"
-  | "FILE_TYPE_NOT_ALLOWED"
-  | "FILE_EXTENSION_BLOCKED"
-  | "SLOT_NOT_FOUND"
-  | "REDIS_ERROR"
-  | "BLOB_ERROR"
-  | "UNKNOWN_ERROR";
+export type PendingUpload = {
+  slotId: number;
+  pathname: string;
+  expectedName: string;
+  expectedSize: number;
+  expectedType: string;
+  issuedAt: number;
+  completedAt: number | null;
+  blob: PBFileMeta | null;
+};
+
+export type SlotReadResponse =
+  | { ok: true; empty: true; slot: null }
+  | { ok: true; empty: false; slot: PBSlot };
+
+export type SlotWriteResponse = {
+  ok: true;
+  slot: PBSlot;
+  evictedIds: number[];
+};
 
 export type PBErrorResponse = {
   ok: false;
   error: {
-    code: PBErrorCode;
+    code: string;
     message: string;
   };
-};
-
-export type PBSlotResponse = {
-  ok: true;
-  empty: boolean;
-  slot: PBSlot | null;
-  remainingSeconds: number;
 };

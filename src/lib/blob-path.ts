@@ -1,6 +1,17 @@
-import { nanoid } from "nanoid";
-import { sanitizeFileName } from "@/lib/validation";
+function sanitizeFileName(name: string): string {
+  const normalized = name.normalize("NFKC").trim();
+  const safe = normalized
+    .replace(/[\\/]+/g, "-")
+    .replace(/[^\p{L}\p{N}._()\- ]/gu, "-")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[-.]+|[-.]+$/g, "")
+    .slice(0, 120);
 
-export function makeBlobPath(slotId: number, originalName: string): string {
-  return `pb/slot-${slotId}/${nanoid()}-${sanitizeFileName(originalName)}`;
+  return safe || "file";
+}
+
+export function makeBlobPath(slotId: number, fileName: string): string {
+  const random = crypto.randomUUID().replaceAll("-", "").slice(0, 16);
+  return `pb-v3/slot-${slotId}/${random}-${sanitizeFileName(fileName)}`;
 }
